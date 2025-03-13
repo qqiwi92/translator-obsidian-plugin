@@ -1,12 +1,21 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from "obsidian";
+import {
+	App,
+	Editor,
+	MarkdownView,
+	Modal,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+} from "obsidian";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Интерфейс настроек плагина
 interface LanguageTablePluginSettings {
 	apiKey: string;
-	nativeLanguage: string;   // Родной язык пользователя
+	nativeLanguage: string; // Родной язык пользователя
 	learningLanguage: string; // Язык, который изучается
-	columns: string[];        // Например, ["Слово", "Перевод", "Транскрипция", "Описание"]
-	provider: string;         // Выбранный провайдер: "ChatGPT" или "Gemini"
+	columns: string[]; // Например, ["Слово", "Перевод", "Транскрипция", "Описание"]
 }
 
 const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
@@ -14,7 +23,6 @@ const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
 	nativeLanguage: "Russian",
 	learningLanguage: "English",
 	columns: ["Слово", "Перевод", "Транскрипция", "Описание"],
-	provider: "ChatGPT",
 };
 
 interface InsertRowData {
@@ -28,25 +36,26 @@ export default class LanguageTablePlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// Добавляем вкладку настроек плагина
 		this.addSettingTab(new LanguageTableSettingTab(this.app, this));
 
-		// Команда для генерации таблицы
 		this.addCommand({
 			id: "generate-language-table",
 			name: "Генерация таблицы для изучения языка",
 			editorCallback: (editor: Editor, view: MarkdownView) => {
-				new GenerateTableModal(this.app, this.settings, (newSettings: LanguageTablePluginSettings) => {
-					this.settings = newSettings;
-					this.saveSettings();
-					const table = generateTableString(newSettings.columns);
-					editor.replaceSelection(table + "\n");
-					new Notice("Таблица сгенерирована.");
-				}).open();
+				new GenerateTableModal(
+					this.app,
+					this.settings,
+					(newSettings: LanguageTablePluginSettings) => {
+						this.settings = newSettings;
+						this.saveSettings();
+						const table = generateTableString(newSettings.columns);
+						editor.replaceSelection(table + "\n");
+						new Notice("Таблица сгенерирована.");
+					},
+				).open();
 			},
 		});
 
-		// Команда для вставки новой строки в таблицу с автоматическим заполнением
 		this.addCommand({
 			id: "insert-word-row",
 			name: "Вставка строки с новым словом",
@@ -57,52 +66,80 @@ export default class LanguageTablePlugin extends Plugin {
 					new Notice("В документе не найдено таблиц.");
 					return;
 				}
-				new InsertRowModal(this.app, tables, this.lastUsedTableIndex, async (selectedIndex: number, rowData: InsertRowData) => {
-					this.lastUsedTableIndex = selectedIndex;
-					const tableBlock = tables[selectedIndex];
+				new InsertRowModal(
+					this.app,
+					tables,
+					this.lastUsedTableIndex,
+					async (selectedIndex: number, rowData: InsertRowData) => {
+						this.lastUsedTableIndex = selectedIndex;
+						const tableBlock = tables[selectedIndex];
 
-					// Проверка: слово уже есть в первой колонке таблицы?
-					if (wordExistsInTable(tableBlock.text, rowData.word)) {
-						new Notice("Такое слово уже есть в таблице.");
-						return;
-					}
-
-					// Формируем новую строку, заполняя все ячейки
-					const numCols = countTableColumns(tableBlock.text);
-					const cells: string[] = [];
-					// Первая колонка – само слово
-					cells.push(rowData.word);
-					// Для остальных столбцов генерируем значение через API с учетом выбранного провайдера
-					for (let i = 1; i < numCols; i++) {
-						const colName = this.settings.columns[i] ? this.settings.columns[i].toLowerCase() : "";
-						let prompt = "";
-						if (colName.includes("перевод")) {
-							prompt = `Переведи слово "${rowData.word}" с ${this.settings.nativeLanguage} на ${this.settings.learningLanguage}.`;
-						} else if (colName.includes("транскрипция")) {
-							prompt = `Предоставь фонетическую транскрипцию слова "${rowData.word}" для ${this.settings.learningLanguage}.`;
-						} else if (colName.includes("описание")) {
-							prompt = `Дай краткое, понятное описание слова "${rowData.word}" для изучающих ${this.settings.learningLanguage}.`;
-						} else {
-							cells.push("");
-							continue;
+						if (wordExistsInTable(tableBlock.text, rowData.word)) {
+							new Notice("Такое слово уже есть в таблице.");
+							return;
 						}
-						const response = await fetchTranslationResult(prompt, this.settings.apiKey, this.settings.provider);
-						cells.push(response);
-					}
 
-					// Собираем строку таблицы
-					const newRow = "| " + cells.join(" | ") + " |";
-					const updatedTable = appendRowToTable(tableBlock.text, newRow);
-					const updatedContent = content.slice(0, tableBlock.start) + updatedTable + content.slice(tableBlock.end);
-					editor.setValue(updatedContent);
-					new Notice("Новая строка добавлена.");
-				}).open();
+						const numCols = countTableColumns(tableBlock.text);
+						const uniqueId = Date.now();
+						const cells: string[] = [];
+						for (let i = 0; i < numCols; i++) {
+							if (i === 0) {
+								cells.push(
+									`${rowData.word}<!--ID:${uniqueId}-->`,
+								);
+							} else {
+								cells.push("loading");
+							}
+						}
+						const newRow = "| " + cells.join(" | ") + " |";
+						const updatedTable = appendRowToTable(
+							tableBlock.text,
+							newRow,
+						);
+						// Обновляем только блок таблицы, не затрагивая остальной текст
+						const updatedContent =
+							content.slice(0, tableBlock.start) +
+							updatedTable +
+							content.slice(tableBlock.end);
+						editor.setValue(updatedContent);
+						new Notice("Строка добавлена с плейсхолдерами."  + this.settings.nativeLanguage  + this.settings.learningLanguage);
+
+						// Обновляем ячейки асинхронно
+						for (let i = 1; i < numCols; i++) {
+							const colName = this.settings.columns[i]
+								? this.settings.columns[i].toLowerCase()
+								: "";
+							let prompt = "";
+							if (colName.includes("перевод")) {
+								prompt = `Переведи слово  "${rowData.word}" с ${this.settings.learningLanguage} на ${this.settings.nativeLanguage} одним-двумя словами`;
+							} else if (colName.includes("транскрипция")) {
+								prompt = `Предоставь фонетическую транскрипцию слова "${rowData.word}" для ${this.settings.learningLanguage}.`;
+							} else if (colName.includes("описание")) {
+								prompt = `Дай очень краткое (3-5 слов), понятное описание слова "${rowData.word}" для изучающих ${this.settings.learningLanguage}.`;
+							} else {
+								continue;
+							}
+							fetchGeminiResult(
+								prompt,
+								this.settings.apiKey,
+							).then((result) => {
+								// Ограничиваем длину результата до первой строки
+								const shortResult = result.split("\n")[0];
+								updateRowCell(editor, uniqueId, i, shortResult);
+							});
+						}
+					},
+				).open();
 			},
 		});
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			await this.loadData(),
+		);
 	}
 
 	async saveSettings() {
@@ -110,54 +147,71 @@ export default class LanguageTablePlugin extends Plugin {
 	}
 }
 
-/* Функция для генерации строки таблицы */
+/* Генерация строки таблицы */
 function generateTableString(columns: string[]): string {
-	const header = "| " + columns.map(col => col.trim() || " ").join(" | ") + " |";
+	const header =
+		"| " + columns.map((col) => col.trim() || " ").join(" | ") + " |";
 	const separator = "| " + columns.map(() => "---").join(" | ") + " |";
 	const emptyRow = "| " + columns.map(() => " ").join(" | ") + " |";
 	return `${header}\n${separator}\n${emptyRow}`;
 }
 
-/* Извлечение markdown-таблиц из текста */
-function extractMarkdownTables(content: string): { text: string; start: number; end: number }[] {
+/* Извлечение таблиц: ищем подряд идущие строки, начинающиеся с "|" */
+function extractMarkdownTables(
+	content: string,
+): { text: string; start: number; end: number }[] {
 	const tables: { text: string; start: number; end: number }[] = [];
-	const regex = /((\|.*\|\n)+)(\|[\s-|]+\|\n)/g;
+	const regex = /((?:^\|.*\|$\n?)+)/gm;
 	let match: RegExpExecArray | null;
 	while ((match = regex.exec(content)) !== null) {
-		const end = regex.lastIndex;
-		const tableText = match[0];
-		tables.push({ text: tableText, start: match.index, end });
+		tables.push({
+			text: match[1].trim(),
+			start: match.index,
+			end: regex.lastIndex,
+		});
 	}
 	return tables;
 }
 
-/* Подсчёт количества столбцов */
+/* Подсчёт столбцов по первой строке */
 function countTableColumns(tableText: string): number {
 	const firstLine = tableText.split("\n")[0];
-	const cols = firstLine.split("|").map(cell => cell.trim()).filter(cell => cell !== "");
+	const cols = firstLine
+		.split("|")
+		.map((cell) => cell.trim())
+		.filter((cell) => cell !== "");
 	return cols.length;
 }
 
-/* Проверка, есть ли слово в первой колонке таблицы */
+/* Проверка наличия слова в первой колонке */
 function wordExistsInTable(tableText: string, word: string): boolean {
-	const lines = tableText.split("\n").filter(line => line.trim().startsWith("|"));
+	const lines = tableText
+		.split("\n")
+		.filter((line) => line.trim().startsWith("|"));
 	for (let i = 2; i < lines.length; i++) {
-		const cells = lines[i].split("|").map(cell => cell.trim());
-		if (cells.length > 1 && cells[1].toLowerCase() === word.toLowerCase()) {
+		const cells = lines[i].split("|").map((cell) => cell.trim());
+		if (cells.length > 1 && cells[0].toLowerCase() === word.toLowerCase()) {
 			return true;
 		}
 	}
 	return false;
 }
 
-/* Добавление новой строки в конец таблицы */
+/* Проверка, является ли строка пустой (все ячейки пустые) */
+function isEmptyRow(row: string): boolean {
+	const cells = row.split("|").map((cell) => cell.trim());
+	// Игнорируем первые и последние элементы, если они пустые
+	return cells.every((cell) => cell === "");
+}
+
+/* Добавление новой строки в конец таблицы (удаляя последний пустой ряд, если он есть) */
 function appendRowToTable(tableText: string, newRow: string): string {
 	const lines = tableText.split("\n");
-	let lastIndex = lines.length - 1;
-	while (lastIndex >= 0 && lines[lastIndex].trim() === "") {
-		lastIndex--;
+	// Если последняя строка пустая (или состоит только из разделителей), удаляем её
+	while (lines.length > 2 && isEmptyRow(lines[lines.length - 1])) {
+		lines.pop();
 	}
-	lines.splice(lastIndex + 1, 0, newRow);
+	lines.push(newRow);
 	return lines.join("\n");
 }
 
@@ -167,7 +221,11 @@ class GenerateTableModal extends Modal {
 	onSubmit: (newSettings: LanguageTablePluginSettings) => void;
 	checkboxes: { [key: string]: HTMLInputElement } = {};
 
-	constructor(app: App, settings: LanguageTablePluginSettings, onSubmit: (newSettings: LanguageTablePluginSettings) => void) {
+	constructor(
+		app: App,
+		settings: LanguageTablePluginSettings,
+		onSubmit: (newSettings: LanguageTablePluginSettings) => void,
+	) {
 		super(app);
 		this.settings = settings;
 		this.onSubmit = onSubmit;
@@ -179,7 +237,12 @@ class GenerateTableModal extends Modal {
 		contentEl.createEl("h2", { text: "Генерация таблицы" });
 		contentEl.createEl("p", { text: "Выберите столбцы для таблицы:" });
 		contentEl.createEl("div", { cls: "separator" });
-		const availableColumns = ["Слово", "Перевод", "Транскрипция", "Описание"];
+		const availableColumns = [
+			"Слово",
+			"Перевод",
+			"Транскрипция",
+			"Описание",
+		];
 		availableColumns.forEach((col) => {
 			const div = contentEl.createDiv();
 			const checkbox = div.createEl("input", { type: "checkbox" });
@@ -188,7 +251,9 @@ class GenerateTableModal extends Modal {
 			div.createEl("label", { text: " " + col });
 		});
 		contentEl.createEl("div", { cls: "separator" });
-		const submitButton = contentEl.createEl("button", { text: "Создать таблицу" });
+		const submitButton = contentEl.createEl("button", {
+			text: "Создать таблицу",
+		});
 		submitButton.onclick = () => {
 			const selected: string[] = [];
 			for (const col in this.checkboxes) {
@@ -210,7 +275,7 @@ class GenerateTableModal extends Modal {
 	}
 }
 
-/* Модальное окно для вставки новой строки в таблицу */
+/* Модальное окно для вставки строки в таблицу */
 class InsertRowModal extends Modal {
 	tables: { text: string; start: number; end: number }[];
 	lastUsedIndex: number;
@@ -218,7 +283,12 @@ class InsertRowModal extends Modal {
 	wordInput: HTMLInputElement;
 	tableSelect: HTMLSelectElement;
 
-	constructor(app: App, tables: { text: string; start: number; end: number }[], lastUsedIndex: number, onSubmit: (selectedIndex: number, data: InsertRowData) => void) {
+	constructor(
+		app: App,
+		tables: { text: string; start: number; end: number }[],
+		lastUsedIndex: number,
+		onSubmit: (selectedIndex: number, data: InsertRowData) => void,
+	) {
 		super(app);
 		this.tables = tables;
 		this.lastUsedIndex = lastUsedIndex;
@@ -239,14 +309,20 @@ class InsertRowModal extends Modal {
 		this.tableSelect = selectDiv.createEl("select");
 		this.tableSelect.style.width = "100%";
 		this.tables.forEach((tableBlock, index) => {
-			const headerSnippet = tableBlock.text.split("\n")[0].slice(0, 40) + "...";
-			const option = this.tableSelect.createEl("option", { text: headerSnippet, value: index.toString() });
+			const headerSnippet =
+				tableBlock.text.split("\n")[0].slice(0, 40) + "...";
+			const option = this.tableSelect.createEl("option", {
+				text: headerSnippet,
+				value: index.toString(),
+			});
 			if (index === this.lastUsedIndex) {
 				option.selected = true;
 			}
 		});
 		contentEl.createEl("div", { cls: "separator" });
-		const submitButton = contentEl.createEl("button", { text: "Добавить строку" });
+		const submitButton = contentEl.createEl("button", {
+			text: "Добавить строку",
+		});
 		submitButton.onclick = () => {
 			const word = this.wordInput.value.trim();
 			if (!word) {
@@ -264,68 +340,45 @@ class InsertRowModal extends Modal {
 	}
 }
 
-/* Функция вызова API перевода в зависимости от выбранного провайдера */
-async function fetchTranslationResult(prompt: string, apiKey: string, provider: string): Promise<string> {
-	if (provider === "Gemini") {
-		// Пример запроса к API Gemini AI (endpoint и payload условны)
-		const url = "https://api.googleai.com/v1/translate"; // Замените на реальный endpoint, если доступен
-		const requestBody = {
-			prompt: prompt,
-			max_tokens: 150,
-		};
-		try {
-			const response = await fetch(url, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"Authorization": `Bearer ${apiKey}`
-				},
-				body: JSON.stringify(requestBody)
-			});
-			const data = await response.json();
-			if (data.result) {
-				return data.result.trim();
-			} else {
-				console.error("Unexpected Gemini API response:", data);
-				return "";
-			}
-		} catch (error) {
-			console.error("Error fetching Gemini response:", error);
-			return "";
-		}
-	} else {
-		// Запрос к ChatGPT API
-		const url = "https://api.openai.com/v1/chat/completions";
-		const requestBody = {
-			model: "gpt-3.5-turbo",
-			messages: [
-				{ role: "system", content: "Ты помогаешь изучать иностранные языки." },
-				{ role: "user", content: prompt }
-			],
-			temperature: 0.2,
-			max_tokens: 150,
-		};
-		try {
-			const response = await fetch(url, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"Authorization": `Bearer ${apiKey}`
-				},
-				body: JSON.stringify(requestBody)
-			});
-			const data = await response.json();
-			if (data.choices && data.choices[0]?.message?.content) {
-				return data.choices[0].message.content.trim();
-			} else {
-				console.error("Unexpected ChatGPT API response:", data);
-				return "";
-			}
-		} catch (error) {
-			console.error("Error fetching ChatGPT response:", error);
-			return "";
+/* Функция вызова Gemini API согласно предоставленному синтаксису */
+async function fetchGeminiResult(
+	prompt: string,
+	apiKey: string,
+): Promise<string> {
+	try {
+		const genAI = new GoogleGenerativeAI(apiKey);
+		const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+		const result = await model.generateContent(prompt);
+		// Берём только первую строку результата
+		return result.response.text().split("\n")[0].trim();
+	} catch (error) {
+		new Notice("Error fetching Gemini response: " + error);
+		console.error("Error fetching Gemini response:", error);
+		return "";
+	}
+}
+
+/* Функция для обновления конкретной ячейки строки с уникальным идентификатором */
+function updateRowCell(
+	editor: Editor,
+	uniqueId: number,
+	cellIndex: number,
+	newContent: string,
+) {
+	const content = editor.getValue();
+	const lines = content.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].includes(`<!--ID:${uniqueId}-->`)) {
+			const cells = lines[i]
+				.split("|")
+				.slice(1, -1)
+				.map((cell) => cell.trim());
+			cells[cellIndex] = newContent;
+			lines[i] = "| " + cells.join(" | ") + " |";
+			break;
 		}
 	}
+	editor.setValue(lines.join("\n"));
 }
 
 /* Настройки плагина – вкладка настроек */
@@ -340,67 +393,65 @@ class LanguageTableSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl("h2", { text: "Настройки плагина таблицы для изучения языка" });
+		containerEl.createEl("h2", {
+			text: "Настройки плагина таблицы для изучения языка",
+		});
 
 		new Setting(containerEl)
-			.setName("API ключ OpenAI/Gemini")
-			.setDesc("Введите ваш API ключ для использования ChatGPT или Gemini AI")
-			.addText(text =>
-				text.setPlaceholder("Ваш API ключ")
+			.setName("API ключ Gemini")
+			.setDesc("Введите ваш API ключ для использования Gemini AI")
+			.addText((text) =>
+				text
+					.setPlaceholder("Ваш API ключ")
 					.setValue(this.plugin.settings.apiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.apiKey = value;
 						await this.plugin.saveSettings();
-					})
+					}),
 			);
 
 		new Setting(containerEl)
 			.setName("Родной язык")
 			.setDesc("Язык, на котором вы владеете (например, Russian)")
-			.addText(text =>
-				text.setPlaceholder("Родной язык")
+			.addText((text) =>
+				text
+					.setPlaceholder("Родной язык")
 					.setValue(this.plugin.settings.nativeLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings.nativeLanguage = value;
 						await this.plugin.saveSettings();
-					})
+					}),
 			);
 
 		new Setting(containerEl)
 			.setName("Изучаемый язык")
 			.setDesc("Язык, который вы изучаете (например, English)")
-			.addText(text =>
-				text.setPlaceholder("Изучаемый язык")
+			.addText((text) =>
+				text
+					.setPlaceholder("Изучаемый язык")
 					.setValue(this.plugin.settings.learningLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings.learningLanguage = value;
 						await this.plugin.saveSettings();
-					})
+					}),
 			);
 
 		new Setting(containerEl)
 			.setName("Столбцы таблицы")
-			.setDesc("Укажите через запятую названия столбцов (например: Слово, Перевод, Транскрипция, Описание)")
-			.addText(text =>
-				text.setPlaceholder("Слово, Перевод, Транскрипция, Описание")
+			.setDesc(
+				"Укажите через запятую названия столбцов (например: Слово, Перевод, Транскрипция, Описание)",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Слово, Перевод, Транскрипция, Описание")
 					.setValue(this.plugin.settings.columns.join(", "))
 					.onChange(async (value) => {
-						this.plugin.settings.columns = value.split(",").map(v => v.trim()).filter(v => v);
+						this.plugin.settings.columns = value
+							.split(",")
+							.map((v) => v.trim())
+							.filter((v) => v);
 						await this.plugin.saveSettings();
-					})
-			);
-
-		new Setting(containerEl)
-			.setName("Провайдер")
-			.setDesc("Выберите провайдера для перевода: ChatGPT или Gemini AI")
-			.addDropdown(drop => 
-				drop.addOption("ChatGPT", "ChatGPT")
-					.addOption("Gemini", "Gemini")
-					.setValue(this.plugin.settings.provider)
-					.onChange(async (value) => {
-						this.plugin.settings.provider = value;
-						await this.plugin.saveSettings();
-					})
+					}),
 			);
 	}
 }
