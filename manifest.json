@@ -1,11 +1,11 @@
 {
 	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"name": "ai-dictionary-gen",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
+	"description": "Use AI to generate translations and much more for learning words",
+	"author": "qqiwi92",
+	"authorUrl": "https://dimalevkin.ru",
 	"fundingUrl": "https://obsidian.md/pricing",
 	"isDesktopOnly": false
 }
