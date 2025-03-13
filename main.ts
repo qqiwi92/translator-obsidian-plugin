@@ -84,7 +84,9 @@ export default class LanguageTablePlugin extends Plugin {
 						const tableBlock = tables[selectedIndex];
 
 						if (wordExistsInTable(tableBlock.text, rowData.word)) {
-							new Notice("This word already exists in the table.");
+							new Notice(
+								"This word already exists in the table.",
+							);
 							return;
 						}
 
@@ -93,7 +95,9 @@ export default class LanguageTablePlugin extends Plugin {
 						const cells: string[] = [];
 						for (let i = 0; i < numCols; i++) {
 							if (i === 0) {
-								cells.push(`${rowData.word}<!--ID:${uniqueId}-->`);
+								cells.push(
+									`${rowData.word}<!--ID:${uniqueId}-->`,
+								);
 							} else {
 								cells.push("loading");
 							}
@@ -131,13 +135,14 @@ export default class LanguageTablePlugin extends Plugin {
 							} else {
 								continue;
 							}
-							fetchGeminiResult(prompt, this.settings.apiKey).then(
-								(result) => {
-									// Limit the result to the first line
-									const shortResult = result.split("\n")[0];
-									updateRowCell(editor, uniqueId, i, shortResult);
-								},
-							);
+							fetchGeminiResult(
+								prompt,
+								this.settings.apiKey,
+							).then((result) => {
+								// Limit the result to the first line
+								const shortResult = result.split("\n")[0];
+								updateRowCell(editor, uniqueId, i, shortResult);
+							});
 						}
 					},
 				).open();
@@ -174,7 +179,8 @@ function generateTableString(
 		return col;
 	});
 	const header = "| " + modifiedColumns.join(" | ") + " |";
-	const separator = "| " + modifiedColumns.map(() => "---").join(" | ") + " |";
+	const separator =
+		"| " + modifiedColumns.map(() => "---").join(" | ") + " |";
 	const emptyRow = "| " + modifiedColumns.map(() => " ").join(" | ") + " |";
 	return `${header}\n${separator}\n${emptyRow}`;
 }
@@ -382,6 +388,8 @@ async function fetchGeminiResult(
 		const result = await model.generateContent(prompt);
 		return result.response.text().split("\n")[0].trim();
 	} catch (error) {
+		new Notice("apik: " + apiKey);
+
 		new Notice("Error fetching Gemini response: " + error);
 		console.error("Error fetching Gemini response:", error);
 		return "";
@@ -443,34 +451,42 @@ class LanguageTableSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Languages")
 			.setDesc(
-				"Enter your native language and the language you are learning with their codes. Format: Native Language (code), Learning Language (code)"
+				"Enter your native language and the language you are learning with their codes. Format: Native Language (code), Learning Language (code)",
 			)
 			.addText((text) =>
 				text
 					.setPlaceholder("Russian (ru), English (en)")
 					.setValue(
-						`${this.plugin.settings.nativeLanguage} (${this.plugin.settings.nativeLanguageCode}), ${this.plugin.settings.learningLanguage} (${this.plugin.settings.learningLanguageCode})`
+						`${this.plugin.settings.nativeLanguage} (${this.plugin.settings.nativeLanguageCode}), ${this.plugin.settings.learningLanguage} (${this.plugin.settings.learningLanguageCode})`,
 					)
 					.onChange(async (value) => {
 						const parts = value.split(",");
 						if (parts.length !== 2) {
-							new Notice("Please enter both languages separated by a comma.");
+							new Notice(
+								"Please enter both languages separated by a comma.",
+							);
 							return;
 						}
 						const nativePart = parts[0].trim();
 						const learningPart = parts[1].trim();
-						const nativeMatch = nativePart.match(/^(.*?)\s*\((.*?)\)$/);
-						const learningMatch = learningPart.match(/^(.*?)\s*\((.*?)\)$/);
+						const nativeMatch =
+							nativePart.match(/^(.*?)\s*\((.*?)\)$/);
+						const learningMatch =
+							learningPart.match(/^(.*?)\s*\((.*?)\)$/);
 						if (!nativeMatch || !learningMatch) {
 							new Notice(
-								"Please use the format: Native Language (code), Learning Language (code)"
+								"Please use the format: Native Language (code), Learning Language (code)",
 							);
 							return;
 						}
-						this.plugin.settings.nativeLanguage = nativeMatch[1].trim();
-						this.plugin.settings.nativeLanguageCode = nativeMatch[2].trim();
-						this.plugin.settings.learningLanguage = learningMatch[1].trim();
-						this.plugin.settings.learningLanguageCode = learningMatch[2].trim();
+						this.plugin.settings.nativeLanguage =
+							nativeMatch[1].trim();
+						this.plugin.settings.nativeLanguageCode =
+							nativeMatch[2].trim();
+						this.plugin.settings.learningLanguage =
+							learningMatch[1].trim();
+						this.plugin.settings.learningLanguageCode =
+							learningMatch[2].trim();
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -478,11 +494,13 @@ class LanguageTableSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Table Columns")
 			.setDesc(
-				"Specify the column names separated by commas (e.g., Word, Translation, Transcription, Description)"
+				"Specify the column names separated by commas (e.g., Word, Translation, Transcription, Description)",
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("Word, Translation, Transcription, Description")
+					.setPlaceholder(
+						"Word, Translation, Transcription, Description",
+					)
 					.setValue(this.plugin.settings.columns.join(", "))
 					.onChange(async (value) => {
 						this.plugin.settings.columns = value

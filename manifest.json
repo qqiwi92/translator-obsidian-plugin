@@ -1,6 +1,6 @@
 {
-	"id": "sample-plugin",
-	"name": "ai-dictionary-gen",
+	"id": "ai-dictionary-gen",
+	"name": "AI Dictionary Generator",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
 	"description": "Use AI to generate translations and much more for learning words",
