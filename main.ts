@@ -10,14 +10,14 @@ import {
 } from "obsidian";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Интерфейс настроек плагина
+// Plugin settings interface
 interface LanguageTablePluginSettings {
 	apiKey: string;
-	nativeLanguage: string; // Родной язык пользователя (полное название)
-	learningLanguage: string; // Язык, который изучается (полное название)
-	nativeLanguageCode: string; // Код родного языка (например, ru)
-	learningLanguageCode: string; // Код изучаемого языка (например, en)
-	columns: string[]; // Например, ["Слово", "Перевод", "Транскрипция", "Описание"]
+	nativeLanguage: string; // User's native language (full name)
+	learningLanguage: string; // Language being learned (full name)
+	nativeLanguageCode: string; // Native language code (e.g., ru)
+	learningLanguageCode: string; // Learning language code (e.g., en)
+	columns: string[]; // For example, ["Word", "Translation", "Transcription", "Description"]
 }
 
 const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
 	learningLanguage: "English",
 	nativeLanguageCode: "ru",
 	learningLanguageCode: "en",
-	columns: ["Слово", "Перевод", "Транскрипция", "Описание"],
+	columns: ["Word", "Translation", "Transcription", "Description"],
 };
 
 interface InsertRowData {
@@ -44,7 +44,7 @@ export default class LanguageTablePlugin extends Plugin {
 
 		this.addCommand({
 			id: "generate-language-table",
-			name: "Генерация таблицы для изучения языка",
+			name: "Generate Language Learning Table",
 			editorCallback: (editor: Editor, view: MarkdownView) => {
 				new GenerateTableModal(
 					this.app,
@@ -52,14 +52,14 @@ export default class LanguageTablePlugin extends Plugin {
 					(newSettings: LanguageTablePluginSettings) => {
 						this.settings = newSettings;
 						this.saveSettings();
-						// Передаём языковые коды в генерацию таблицы
+						// Pass language codes to table generation
 						const table = generateTableString(
 							newSettings.columns,
 							newSettings.learningLanguageCode,
 							newSettings.nativeLanguageCode,
 						);
 						editor.replaceSelection(table + "\n");
-						new Notice("Таблица сгенерирована.");
+						new Notice("Table generated.");
 					},
 				).open();
 			},
@@ -67,12 +67,12 @@ export default class LanguageTablePlugin extends Plugin {
 
 		this.addCommand({
 			id: "insert-word-row",
-			name: "Вставка строки с новым словом",
+			name: "Insert New Word Row",
 			editorCallback: async (editor: Editor, view: MarkdownView) => {
 				const content = editor.getValue();
 				const tables = extractMarkdownTables(content);
 				if (tables.length === 0) {
-					new Notice("В документе не найдено таблиц.");
+					new Notice("No tables found in the document.");
 					return;
 				}
 				new InsertRowModal(
@@ -84,7 +84,7 @@ export default class LanguageTablePlugin extends Plugin {
 						const tableBlock = tables[selectedIndex];
 
 						if (wordExistsInTable(tableBlock.text, rowData.word)) {
-							new Notice("Такое слово уже есть в таблице.");
+							new Notice("This word already exists in the table.");
 							return;
 						}
 
@@ -93,9 +93,7 @@ export default class LanguageTablePlugin extends Plugin {
 						const cells: string[] = [];
 						for (let i = 0; i < numCols; i++) {
 							if (i === 0) {
-								cells.push(
-									`${rowData.word}<!--ID:${uniqueId}-->`,
-								);
+								cells.push(`${rowData.word}<!--ID:${uniqueId}-->`);
 							} else {
 								cells.push("loading");
 							}
@@ -105,37 +103,37 @@ export default class LanguageTablePlugin extends Plugin {
 							tableBlock.text,
 							newRow,
 						);
-						// Обновляем только блок таблицы, не затрагивая остальной текст
+						// Update only the table block, leaving the rest of the text untouched
 						const updatedContent =
 							content.slice(0, tableBlock.start) +
 							updatedTable +
 							content.slice(tableBlock.end);
 						editor.setValue(updatedContent);
 						new Notice(
-							"Строка добавлена с плейсхолдерами." +
+							"Row added with placeholders. " +
 								this.settings.nativeLanguage +
 								" " +
 								this.settings.learningLanguage,
 						);
 
-						// Обновляем ячейки асинхронно
+						// Update cells asynchronously
 						for (let i = 1; i < numCols; i++) {
 							const colName = this.settings.columns[i]
 								? this.settings.columns[i].toLowerCase()
 								: "";
 							let prompt = "";
-							if (colName.includes("перевод")) {
-								prompt = `Переведи слово "${rowData.word}" с ${this.settings.learningLanguageCode} на ${this.settings.nativeLanguageCode} одним-двумя словами`;
-							} else if (colName.includes("транскрипция")) {
-								prompt = `Предоставь фонетическую транскрипцию слова "${rowData.word}" для ${this.settings.learningLanguageCode}.`;
-							} else if (colName.includes("описание")) {
-								prompt = `Дай очень краткое (3-5 слов), понятное описание слова "${rowData.word}" для изучающих ${this.settings.learningLanguageCode}.`;
+							if (colName.includes("translation")) {
+								prompt = `Translate the word "${rowData.word}" from ${this.settings.learningLanguageCode} to ${this.settings.nativeLanguageCode} in one or two words`;
+							} else if (colName.includes("transcription")) {
+								prompt = `Provide the phonetic transcription of the word "${rowData.word}" for ${this.settings.learningLanguageCode}.`;
+							} else if (colName.includes("description")) {
+								prompt = `Give a very brief (3-5 words), clear description of the word "${rowData.word}" for learners of ${this.settings.learningLanguageCode}.`;
 							} else {
 								continue;
 							}
 							fetchGeminiResult(prompt, this.settings.apiKey).then(
 								(result) => {
-									// Ограничиваем длину результата до первой строки
+									// Limit the result to the first line
 									const shortResult = result.split("\n")[0];
 									updateRowCell(editor, uniqueId, i, shortResult);
 								},
@@ -160,17 +158,17 @@ export default class LanguageTablePlugin extends Plugin {
 	}
 }
 
-/* Генерация строки таблицы с добавлением языковых кодов */
+/* Generate table row string with language codes */
 function generateTableString(
 	columns: string[],
 	learningLanguageCode: string,
 	nativeLanguageCode: string,
 ): string {
-	// Модифицируем названия столбцов: если название содержит "Слово" или "Перевод"
+	// Modify column names: if the name contains "Word" or "Translation"
 	const modifiedColumns = columns.map((col) => {
-		if (col.toLowerCase().includes("слово")) {
+		if (col.toLowerCase().includes("word")) {
 			return `${col} ${learningLanguageCode}`;
-		} else if (col.toLowerCase().includes("перевод")) {
+		} else if (col.toLowerCase().includes("translation")) {
 			return `${col} ${nativeLanguageCode}`;
 		}
 		return col;
@@ -181,7 +179,7 @@ function generateTableString(
 	return `${header}\n${separator}\n${emptyRow}`;
 }
 
-/* Извлечение таблиц: ищем подряд идущие строки, начинающиеся с "|" */
+/* Extract Markdown tables: search for consecutive lines starting with "|" */
 function extractMarkdownTables(
 	content: string,
 ): { text: string; start: number; end: number }[] {
@@ -198,7 +196,7 @@ function extractMarkdownTables(
 	return tables;
 }
 
-/* Подсчёт столбцов по первой строке */
+/* Count columns using the first row */
 function countTableColumns(tableText: string): number {
 	const firstLine = tableText.split("\n")[0];
 	const cols = firstLine
@@ -208,7 +206,7 @@ function countTableColumns(tableText: string): number {
 	return cols.length;
 }
 
-/* Проверка наличия слова в первой колонке */
+/* Check if the word exists in the first column */
 function wordExistsInTable(tableText: string, word: string): boolean {
 	const lines = tableText
 		.split("\n")
@@ -222,13 +220,13 @@ function wordExistsInTable(tableText: string, word: string): boolean {
 	return false;
 }
 
-/* Проверка, является ли строка пустой (все ячейки пустые) */
+/* Check if a row is empty (all cells are empty) */
 function isEmptyRow(row: string): boolean {
 	const cells = row.split("|").map((cell) => cell.trim());
 	return cells.every((cell) => cell === "");
 }
 
-/* Добавление новой строки в конец таблицы */
+/* Append a new row to the end of the table */
 function appendRowToTable(tableText: string, newRow: string): string {
 	const lines = tableText.split("\n");
 	while (lines.length > 2 && isEmptyRow(lines[lines.length - 1])) {
@@ -238,12 +236,12 @@ function appendRowToTable(tableText: string, newRow: string): string {
 	return lines.join("\n");
 }
 
-/* Модальное окно для генерации таблицы */
+/* Modal for table generation */
 class GenerateTableModal extends Modal {
 	settings: LanguageTablePluginSettings;
 	onSubmit: (newSettings: LanguageTablePluginSettings) => void;
 	checkboxes: { [key: string]: HTMLInputElement } = {};
-	// Добавляем поля для ввода языковых кодов
+	// Fields for language codes
 	learningLangCodeInput: HTMLInputElement;
 	nativeLangCodeInput: HTMLInputElement;
 
@@ -260,14 +258,14 @@ class GenerateTableModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl("h2", { text: "Генерация таблицы" });
-		contentEl.createEl("p", { text: "Выберите столбцы для таблицы:" });
+		contentEl.createEl("h2", { text: "Table Generation" });
+		contentEl.createEl("p", { text: "Select columns for the table:" });
 		contentEl.createEl("div", { cls: "separator" });
 		const availableColumns = [
-			"Слово",
-			"Перевод",
-			"Транскрипция",
-			"Описание",
+			"Word",
+			"Translation",
+			"Transcription",
+			"Description",
 		];
 		availableColumns.forEach((col) => {
 			const div = contentEl.createDiv();
@@ -277,24 +275,24 @@ class GenerateTableModal extends Modal {
 			div.createEl("label", { text: " " + col });
 		});
 
-		// Поля для языковых кодов
+		// Fields for language codes
 		contentEl.createEl("div", { cls: "separator" });
 		this.learningLangCodeInput = contentEl.createEl("input", {
 			type: "text",
-			placeholder: "Код изучаемого языка (например, en)",
+			placeholder: "Learning language code (e.g., en)",
 		});
 		this.learningLangCodeInput.value =
 			this.settings.learningLanguageCode || "";
 		contentEl.createEl("div", { cls: "separator" });
 		this.nativeLangCodeInput = contentEl.createEl("input", {
 			type: "text",
-			placeholder: "Код родного языка (например, ru)",
+			placeholder: "Native language code (e.g., ru)",
 		});
 		this.nativeLangCodeInput.value = this.settings.nativeLanguageCode || "";
 
 		contentEl.createEl("div", { cls: "separator" });
 		const submitButton = contentEl.createEl("button", {
-			text: "Создать таблицу",
+			text: "Create Table",
 		});
 		submitButton.focus();
 		submitButton.onclick = () => {
@@ -305,10 +303,10 @@ class GenerateTableModal extends Modal {
 				}
 			}
 			if (selected.length === 0) {
-				new Notice("Выберите хотя бы один столбец.");
+				new Notice("Please select at least one column.");
 				return;
 			}
-			// Обновляем настройки с новыми языковыми кодами
+			// Update settings with new language codes
 			this.onSubmit({
 				...this.settings,
 				columns: selected,
@@ -324,7 +322,7 @@ class GenerateTableModal extends Modal {
 	}
 }
 
-/* Модальное окно для вставки строки в таблицу */
+/* Modal for inserting a row into a table */
 class InsertRowModal extends Modal {
 	tables: { text: string; start: number; end: number }[];
 	lastUsedIndex: number;
@@ -347,14 +345,14 @@ class InsertRowModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl("h2", { text: "Вставка строки в таблицу" });
+		contentEl.createEl("h2", { text: "Insert Row into Table" });
 		const wordDiv = contentEl.createDiv();
-		wordDiv.createEl("label", { text: "Новое слово:" });
+		wordDiv.createEl("label", { text: "New word:" });
 		this.wordInput = wordDiv.createEl("input", { type: "text" });
 		this.wordInput.style.width = "100%";
 		contentEl.createEl("div", { cls: "separator" });
 		const selectDiv = contentEl.createDiv();
-		selectDiv.createEl("label", { text: "Выберите таблицу:" });
+		selectDiv.createEl("label", { text: "Select a table:" });
 		this.tableSelect = selectDiv.createEl("select");
 		this.tableSelect.style.width = "100%";
 		this.tables.forEach((tableBlock, index) => {
@@ -370,12 +368,12 @@ class InsertRowModal extends Modal {
 		});
 		contentEl.createEl("div", { cls: "separator" });
 		const submitButton = contentEl.createEl("button", {
-			text: "Добавить строку",
+			text: "Add Row",
 		});
 		submitButton.onclick = () => {
 			const word = this.wordInput.value.trim();
 			if (!word) {
-				new Notice("Введите слово.");
+				new Notice("Please enter a word.");
 				return;
 			}
 			const selectedIndex = parseInt(this.tableSelect.value);
@@ -389,7 +387,7 @@ class InsertRowModal extends Modal {
 	}
 }
 
-/* Функция вызова Gemini API согласно предоставленному синтаксису */
+/* Function to call the Gemini API according to the provided syntax */
 async function fetchGeminiResult(
 	prompt: string,
 	apiKey: string,
@@ -406,7 +404,7 @@ async function fetchGeminiResult(
 	}
 }
 
-/* Функция для обновления конкретной ячейки строки с уникальным идентификатором */
+/* Function to update a specific cell in a row with a unique identifier */
 function updateRowCell(
 	editor: Editor,
 	uniqueId: number,
@@ -429,7 +427,7 @@ function updateRowCell(
 	editor.setValue(lines.join("\n"));
 }
 
-/* Настройки плагина – вкладка настроек */
+/* Plugin settings – Settings Tab */
 class LanguageTableSettingTab extends PluginSettingTab {
 	plugin: LanguageTablePlugin;
 
@@ -442,15 +440,15 @@ class LanguageTableSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 		containerEl.createEl("h2", {
-			text: "Настройки плагина таблицы для изучения языка",
+			text: "Language Learning Table Plugin Settings",
 		});
 
 		new Setting(containerEl)
-			.setName("API ключ Gemini")
-			.setDesc("Введите ваш API ключ для использования Gemini AI")
+			.setName("Gemini API Key")
+			.setDesc("Enter your API key to use Gemini AI")
 			.addText((text) =>
 				text
-					.setPlaceholder("Ваш API ключ")
+					.setPlaceholder("Your API key")
 					.setValue(this.plugin.settings.apiKey)
 					.onChange(async (value) => {
 						this.plugin.settings.apiKey = value;
@@ -459,11 +457,11 @@ class LanguageTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Родной язык")
-			.setDesc("Язык, на котором вы владеете (например, Russian)")
+			.setName("Native Language")
+			.setDesc("Language you are fluent in (e.g., Russian)")
 			.addText((text) =>
 				text
-					.setPlaceholder("Родной язык")
+					.setPlaceholder("Native Language")
 					.setValue(this.plugin.settings.nativeLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings.nativeLanguage = value;
@@ -472,11 +470,11 @@ class LanguageTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Изучаемый язык")
-			.setDesc("Язык, который вы изучаете (например, English)")
+			.setName("Language Being Learned")
+			.setDesc("Language you are learning (e.g., English)")
 			.addText((text) =>
 				text
-					.setPlaceholder("Изучаемый язык")
+					.setPlaceholder("Language Being Learned")
 					.setValue(this.plugin.settings.learningLanguage)
 					.onChange(async (value) => {
 						this.plugin.settings.learningLanguage = value;
@@ -484,10 +482,10 @@ class LanguageTableSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Настройка для языковых кодов
+		// Setting for language codes
 		new Setting(containerEl)
-			.setName("Код изучаемого языка")
-			.setDesc("Введите код изучаемого языка (например, en)")
+			.setName("Learning Language Code")
+			.setDesc("Enter the learning language code (e.g., en)")
 			.addText((text) =>
 				text
 					.setPlaceholder("en")
@@ -499,8 +497,8 @@ class LanguageTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Код родного языка")
-			.setDesc("Введите код вашего родного языка (например, ru)")
+			.setName("Native Language Code")
+			.setDesc("Enter your native language code (e.g., ru)")
 			.addText((text) =>
 				text
 					.setPlaceholder("ru")
@@ -512,13 +510,13 @@ class LanguageTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Столбцы таблицы")
+			.setName("Table Columns")
 			.setDesc(
-				"Укажите через запятую названия столбцов (например: Слово, Перевод, Транскрипция, Описание)",
+				"Specify the column names separated by commas (e.g., Word, Translation, Transcription, Description)",
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("Слово, Перевод, Транскрипция, Описание")
+					.setPlaceholder("Word, Translation, Transcription, Description")
 					.setValue(this.plugin.settings.columns.join(", "))
 					.onChange(async (value) => {
 						this.plugin.settings.columns = value
