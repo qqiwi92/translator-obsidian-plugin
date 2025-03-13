@@ -123,9 +123,9 @@ export default class LanguageTablePlugin extends Plugin {
 								: "";
 							let prompt = "";
 							if (colName.includes("translation")) {
-								prompt = `Translate the word "${rowData.word}" from ${this.settings.learningLanguageCode} to ${this.settings.nativeLanguageCode} in one or two words`;
+								prompt = `Translate the word "${rowData.word}" from ${this.settings.learningLanguageCode} to ${this.settings.nativeLanguageCode} in one or two words, just translate, do not explain or put something in braces like this 'кот (kot)' `;
 							} else if (colName.includes("transcription")) {
-								prompt = `Provide the phonetic transcription of the word "${rowData.word}" for ${this.settings.learningLanguageCode}.`;
+								prompt = `Provide the phonetic transcription of the word "${rowData.word}" for ${this.settings.learningLanguageCode}. only in this syntax /dɒɡ/ nothing more.`;
 							} else if (colName.includes("description")) {
 								prompt = `Give a very brief (3-5 words), clear description of the word "${rowData.word}" for learners of ${this.settings.learningLanguageCode}.`;
 							} else {
@@ -275,21 +275,7 @@ class GenerateTableModal extends Modal {
 			div.createEl("label", { text: " " + col });
 		});
 
-		// Fields for language codes
-		contentEl.createEl("div", { cls: "separator" });
-		this.learningLangCodeInput = contentEl.createEl("input", {
-			type: "text",
-			placeholder: "Learning language code (e.g., en)",
-		});
-		this.learningLangCodeInput.value =
-			this.settings.learningLanguageCode || "";
-		contentEl.createEl("div", { cls: "separator" });
-		this.nativeLangCodeInput = contentEl.createEl("input", {
-			type: "text",
-			placeholder: "Native language code (e.g., ru)",
-		});
-		this.nativeLangCodeInput.value = this.settings.nativeLanguageCode || "";
-
+		// Fields for language codes are now handled in a combined setting in the plugin settings
 		contentEl.createEl("div", { cls: "separator" });
 		const submitButton = contentEl.createEl("button", {
 			text: "Create Table",
@@ -306,12 +292,10 @@ class GenerateTableModal extends Modal {
 				new Notice("Please select at least one column.");
 				return;
 			}
-			// Update settings with new language codes
+			// Update settings with the current language codes (already set via the combined input)
 			this.onSubmit({
 				...this.settings,
 				columns: selected,
-				learningLanguageCode: this.learningLangCodeInput.value.trim() || "en",
-				nativeLanguageCode: this.nativeLangCodeInput.value.trim() || "ru",
 			});
 			this.close();
 		};
@@ -457,54 +441,36 @@ class LanguageTableSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Native Language")
-			.setDesc("Language you are fluent in (e.g., Russian)")
+			.setName("Languages")
+			.setDesc(
+				"Enter your native language and the language you are learning with their codes. Format: Native Language (code), Learning Language (code)"
+			)
 			.addText((text) =>
 				text
-					.setPlaceholder("Native Language")
-					.setValue(this.plugin.settings.nativeLanguage)
+					.setPlaceholder("Russian (ru), English (en)")
+					.setValue(
+						`${this.plugin.settings.nativeLanguage} (${this.plugin.settings.nativeLanguageCode}), ${this.plugin.settings.learningLanguage} (${this.plugin.settings.learningLanguageCode})`
+					)
 					.onChange(async (value) => {
-						this.plugin.settings.nativeLanguage = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Language Being Learned")
-			.setDesc("Language you are learning (e.g., English)")
-			.addText((text) =>
-				text
-					.setPlaceholder("Language Being Learned")
-					.setValue(this.plugin.settings.learningLanguage)
-					.onChange(async (value) => {
-						this.plugin.settings.learningLanguage = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		// Setting for language codes
-		new Setting(containerEl)
-			.setName("Learning Language Code")
-			.setDesc("Enter the learning language code (e.g., en)")
-			.addText((text) =>
-				text
-					.setPlaceholder("en")
-					.setValue(this.plugin.settings.learningLanguageCode)
-					.onChange(async (value) => {
-						this.plugin.settings.learningLanguageCode = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName("Native Language Code")
-			.setDesc("Enter your native language code (e.g., ru)")
-			.addText((text) =>
-				text
-					.setPlaceholder("ru")
-					.setValue(this.plugin.settings.nativeLanguageCode)
-					.onChange(async (value) => {
-						this.plugin.settings.nativeLanguageCode = value;
+						const parts = value.split(",");
+						if (parts.length !== 2) {
+							new Notice("Please enter both languages separated by a comma.");
+							return;
+						}
+						const nativePart = parts[0].trim();
+						const learningPart = parts[1].trim();
+						const nativeMatch = nativePart.match(/^(.*?)\s*\((.*?)\)$/);
+						const learningMatch = learningPart.match(/^(.*?)\s*\((.*?)\)$/);
+						if (!nativeMatch || !learningMatch) {
+							new Notice(
+								"Please use the format: Native Language (code), Learning Language (code)"
+							);
+							return;
+						}
+						this.plugin.settings.nativeLanguage = nativeMatch[1].trim();
+						this.plugin.settings.nativeLanguageCode = nativeMatch[2].trim();
+						this.plugin.settings.learningLanguage = learningMatch[1].trim();
+						this.plugin.settings.learningLanguageCode = learningMatch[2].trim();
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -512,7 +478,7 @@ class LanguageTableSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Table Columns")
 			.setDesc(
-				"Specify the column names separated by commas (e.g., Word, Translation, Transcription, Description)",
+				"Specify the column names separated by commas (e.g., Word, Translation, Transcription, Description)"
 			)
 			.addText((text) =>
 				text
