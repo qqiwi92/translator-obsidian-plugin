@@ -10,14 +10,14 @@ import {
 } from "obsidian";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Plugin settings interface
+// settings interface
 interface LanguageTablePluginSettings {
 	apiKey: string;
 	nativeLanguage: string; // User's native language (full name)
 	learningLanguage: string; // Language being learned (full name)
 	nativeLanguageCode: string; // Native language code (e.g., ru)
 	learningLanguageCode: string; // Learning language code (e.g., en)
-	columns: string[]; // For example, ["Word", "Translation", "Transcription", "Description"]
+	columns: string[]; // ["Word", "Translation", "Transcription", "Description"]
 }
 
 const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
@@ -52,7 +52,6 @@ export default class LanguageTablePlugin extends Plugin {
 					(newSettings: LanguageTablePluginSettings) => {
 						this.settings = newSettings;
 						this.saveSettings();
-						// Pass language codes to table generation
 						const table = generateTableString(
 							newSettings.columns,
 							newSettings.learningLanguageCode,
@@ -107,7 +106,7 @@ export default class LanguageTablePlugin extends Plugin {
 							tableBlock.text,
 							newRow,
 						);
-						// Update only the table block, leaving the rest of the text untouched
+						// only the table block, the rest untouched
 						const updatedContent =
 							content.slice(0, tableBlock.start) +
 							updatedTable +
@@ -120,7 +119,7 @@ export default class LanguageTablePlugin extends Plugin {
 								this.settings.learningLanguage,
 						);
 
-						// Update cells asynchronously
+						// AI updating
 						for (let i = 1; i < numCols; i++) {
 							const colName = this.settings.columns[i]
 								? this.settings.columns[i].toLowerCase()
@@ -163,13 +162,12 @@ export default class LanguageTablePlugin extends Plugin {
 	}
 }
 
-/* Generate table row string with language codes */
 function generateTableString(
 	columns: string[],
 	learningLanguageCode: string,
 	nativeLanguageCode: string,
 ): string {
-	// Modify column names: if the name contains "Word" or "Translation"
+	// modify if the name contains "Word" or "Translation"
 	const modifiedColumns = columns.map((col) => {
 		if (col.toLowerCase().includes("word")) {
 			return `${col} ${learningLanguageCode}`;
@@ -185,7 +183,7 @@ function generateTableString(
 	return `${header}\n${separator}\n${emptyRow}`;
 }
 
-/* Extract Markdown tables: search for consecutive lines starting with "|" */
+/* extract tables */
 function extractMarkdownTables(
 	content: string,
 ): { text: string; start: number; end: number }[] {
@@ -202,7 +200,6 @@ function extractMarkdownTables(
 	return tables;
 }
 
-/* Count columns using the first row */
 function countTableColumns(tableText: string): number {
 	const firstLine = tableText.split("\n")[0];
 	const cols = firstLine
@@ -212,7 +209,6 @@ function countTableColumns(tableText: string): number {
 	return cols.length;
 }
 
-/* Check if the word exists in the first column */
 function wordExistsInTable(tableText: string, word: string): boolean {
 	const lines = tableText
 		.split("\n")
@@ -226,13 +222,12 @@ function wordExistsInTable(tableText: string, word: string): boolean {
 	return false;
 }
 
-/* Check if a row is empty (all cells are empty) */
+/* check if all cells are empty */
 function isEmptyRow(row: string): boolean {
 	const cells = row.split("|").map((cell) => cell.trim());
 	return cells.every((cell) => cell === "");
 }
 
-/* Append a new row to the end of the table */
 function appendRowToTable(tableText: string, newRow: string): string {
 	const lines = tableText.split("\n");
 	while (lines.length > 2 && isEmptyRow(lines[lines.length - 1])) {
@@ -242,12 +237,11 @@ function appendRowToTable(tableText: string, newRow: string): string {
 	return lines.join("\n");
 }
 
-/* Modal for table generation */
+/* table generation modal */
 class GenerateTableModal extends Modal {
 	settings: LanguageTablePluginSettings;
 	onSubmit: (newSettings: LanguageTablePluginSettings) => void;
 	checkboxes: { [key: string]: HTMLInputElement } = {};
-	// Fields for language codes
 	learningLangCodeInput: HTMLInputElement;
 	nativeLangCodeInput: HTMLInputElement;
 
@@ -281,7 +275,6 @@ class GenerateTableModal extends Modal {
 			div.createEl("label", { text: " " + col });
 		});
 
-		// Fields for language codes are now handled in a combined setting in the plugin settings
 		contentEl.createEl("div", { cls: "separator" });
 		const submitButton = contentEl.createEl("button", {
 			text: "Create Table",
@@ -298,7 +291,6 @@ class GenerateTableModal extends Modal {
 				new Notice("Please select at least one column.");
 				return;
 			}
-			// Update settings with the current language codes (already set via the combined input)
 			this.onSubmit({
 				...this.settings,
 				columns: selected,
@@ -312,7 +304,7 @@ class GenerateTableModal extends Modal {
 	}
 }
 
-/* Modal for inserting a row into a table */
+/* row inserting modal */
 class InsertRowModal extends Modal {
 	tables: { text: string; start: number; end: number }[];
 	lastUsedIndex: number;
@@ -338,13 +330,16 @@ class InsertRowModal extends Modal {
 		contentEl.createEl("h2", { text: "Insert Row into Table" });
 		const wordDiv = contentEl.createDiv();
 		wordDiv.createEl("label", { text: "New word:" });
-		this.wordInput = wordDiv.createEl("input", { type: "text" });
-		this.wordInput.style.width = "100%";
+		this.wordInput = wordDiv.createEl("input", {
+			type: "text",
+			cls: "take-full-width",
+		});
 		contentEl.createEl("div", { cls: "separator" });
 		const selectDiv = contentEl.createDiv();
 		selectDiv.createEl("label", { text: "Select a table:" });
-		this.tableSelect = selectDiv.createEl("select");
-		this.tableSelect.style.width = "100%";
+		this.tableSelect = selectDiv.createEl("select", {
+			cls: "take-full-width",
+		});
 		this.tables.forEach((tableBlock, index) => {
 			const headerSnippet =
 				tableBlock.text.split("\n")[0].slice(0, 40) + "...";
@@ -377,7 +372,7 @@ class InsertRowModal extends Modal {
 	}
 }
 
-/* Function to call the Gemini API according to the provided syntax */
+/* AI stuff */
 async function fetchGeminiResult(
 	prompt: string,
 	apiKey: string,
@@ -396,7 +391,7 @@ async function fetchGeminiResult(
 	}
 }
 
-/* Function to update a specific cell in a row with a unique identifier */
+/* update by row uid */
 function updateRowCell(
 	editor: Editor,
 	uniqueId: number,
@@ -419,7 +414,7 @@ function updateRowCell(
 	editor.setValue(lines.join("\n"));
 }
 
-/* Plugin settings – Settings Tab */
+/* plugin settings – Settings Tab */
 class LanguageTableSettingTab extends PluginSettingTab {
 	plugin: LanguageTablePlugin;
 

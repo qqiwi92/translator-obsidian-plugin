@@ -11,3 +11,6 @@ If your plugin does not need CSS, delete this file.
 	height: 15px;
 	width: 1px;
 }
+.take-full-width {
+    width: 100%;
+}
