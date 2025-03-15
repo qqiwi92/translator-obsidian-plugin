@@ -12,22 +12,14 @@ A smart table generator plugin with AI-powered data filling using Gemini. Helps 
 - 🔧 Flexible table configuration
 - ⚡ Quick word insertion with auto-completion
 
-## Installation
-
-1. Open Obsidian Settings
-2. Navigate to "Community plugins"
-3. Search for "Language Learning Table"
-4. Install and enable the plugin
-
 ## Configuration
 
 1. Get Gemini API Key: [Google AI Studio](https://aistudio.google.com/)
 2. In plugin settings provide:
-   - Gemini API Key
+   - Gemini API Key (working on adding ollama for self hosting)
    - Native and learning languages (full names)
    - Language codes (e.g. ru, en)
    - Desired table columns
-
 ## Usage
 
 ### Create New Table
@@ -42,10 +34,7 @@ A smart table generator plugin with AI-powered data filling using Gemini. Helps 
 3. Enter word in target language
 4. Select target table
 
-The plugin will automatically fill:
-- Translation
-- Phonetic transcription
-- Brief definition
+The plugin will automatically fill all the rest with ai
 
 ## Example Table
 
@@ -54,21 +43,6 @@ The plugin will automatically fill:
 |---------|----------------|---------------|----------------|
 | apple   | яблоко         | ˈæp.əl        | fruit          |
 ```
-Requirements
-Obsidian v1.4.16+
-
-Internet connection
-
-Google Gemini API Key
-
-Supported Features
-Custom column names
-
-Duplicate word checking
-
-Async data updates
-
-Multi-language support
 
 Table usage history
 
