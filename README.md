@@ -1,7 +1,6 @@
 # AI-DICTIONARY-GEN
 
-<video controls src="20250313-1815-59.8137053.mp4" title="Title"></video>
-
+![demo](demo.gif)
 A smart table generator plugin with AI-powered data filling using Gemini. Helps in language learning by automating translations, transcriptions and definitions.
 
 ## Features
