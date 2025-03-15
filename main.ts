@@ -7,6 +7,7 @@ import {
 	Plugin,
 	PluginSettingTab,
 	Setting,
+	requestUrl,
 } from "obsidian";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
@@ -18,6 +19,8 @@ interface LanguageTablePluginSettings {
 	nativeLanguageCode: string; // Native language code (e.g., ru)
 	learningLanguageCode: string; // Learning language code (e.g., en)
 	columns: string[]; // ["Word", "Translation", "Transcription", "Description"]
+	aiProvider: "gemini" | "ollama"; // New: choose between Gemini and Ollama
+	localModelName: string;
 }
 
 const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
@@ -27,6 +30,8 @@ const DEFAULT_SETTINGS: LanguageTablePluginSettings = {
 	nativeLanguageCode: "ru",
 	learningLanguageCode: "en",
 	columns: ["Word", "Translation", "Transcription", "Description"],
+	aiProvider: "gemini",
+	localModelName: "gemma3:1b",
 };
 
 interface InsertRowData {
@@ -106,7 +111,7 @@ export default class LanguageTablePlugin extends Plugin {
 							tableBlock.text,
 							newRow,
 						);
-						// only the table block, the rest untouched
+						// Replace only the table block
 						const updatedContent =
 							content.slice(0, tableBlock.start) +
 							updatedTable +
@@ -119,26 +124,32 @@ export default class LanguageTablePlugin extends Plugin {
 								this.settings.learningLanguage,
 						);
 
-						// AI updating
+						// AI updating for each non-word column
 						for (let i = 1; i < numCols; i++) {
 							const colName = this.settings.columns[i]
 								? this.settings.columns[i].toLowerCase()
 								: "";
+
 							let prompt = "";
-							if (colName.includes("translation")) {
-								prompt = `Translate the word "${rowData.word}" from ${this.settings.learningLanguageCode} to ${this.settings.nativeLanguageCode} in one or two words, just translate, do not explain or put something in braces like this 'кот (kot)' `;
-							} else if (colName.includes("transcription")) {
-								prompt = `Provide the phonetic transcription of the word "${rowData.word}" for ${this.settings.learningLanguageCode}. only in this syntax /dɒɡ/ nothing more.`;
-							} else if (colName.includes("description")) {
-								prompt = `Give a very brief (3-5 words), clear description of the word "${rowData.word}" for learners of ${this.settings.learningLanguageCode}.`;
+							if (colName.toLowerCase().includes("translation")) {
+								prompt = `Translate the word "${rowData.word}" from ${this.settings.learningLanguage}(${this.settings.learningLanguageCode}) to ${this.settings.nativeLanguage}(${this.settings.nativeLanguageCode}) in one or two words, just translate without explanations.`;
+							} else if (
+								colName.toLowerCase().includes("transcription")
+							) {
+								prompt = `Provide the phonetic transcription of the word "${rowData.word}" for ${this.settings.learningLanguage}(${this.settings.learningLanguageCode}) using a format like /dɒɡ/.`;
+							} else if (
+								colName.toLowerCase().includes("description")
+							) {
+								prompt = `Give a very brief (3-5 words) description of the word "${rowData.word}" for learners of ${this.settings.learningLanguage}(${this.settings.learningLanguageCode})`;
 							} else {
 								continue;
 							}
-							fetchGeminiResult(
+							fetchAiResult(
 								prompt,
 								this.settings.apiKey,
+								this.settings.aiProvider,
+								this.settings.localModelName,
 							).then((result) => {
-								// Limit the result to the first line
 								const shortResult = result.split("\n")[0];
 								updateRowCell(editor, uniqueId, i, shortResult);
 							});
@@ -167,7 +178,6 @@ function generateTableString(
 	learningLanguageCode: string,
 	nativeLanguageCode: string,
 ): string {
-	// modify if the name contains "Word" or "Translation"
 	const modifiedColumns = columns.map((col) => {
 		if (col.toLowerCase().includes("word")) {
 			return `${col} ${learningLanguageCode}`;
@@ -183,7 +193,6 @@ function generateTableString(
 	return `${header}\n${separator}\n${emptyRow}`;
 }
 
-/* extract tables */
 function extractMarkdownTables(
 	content: string,
 ): { text: string; start: number; end: number }[] {
@@ -222,7 +231,6 @@ function wordExistsInTable(tableText: string, word: string): boolean {
 	return false;
 }
 
-/* check if all cells are empty */
 function isEmptyRow(row: string): boolean {
 	const cells = row.split("|").map((cell) => cell.trim());
 	return cells.every((cell) => cell === "");
@@ -237,13 +245,73 @@ function appendRowToTable(tableText: string, newRow: string): string {
 	return lines.join("\n");
 }
 
-/* table generation modal */
+async function fetchAiResult(
+	prompt: string,
+	apiKey: string,
+	aiProvider: "gemini" | "ollama",
+	model: string,
+): Promise<string> {
+	if (aiProvider === "ollama") {
+		try {
+			const response = await requestUrl({
+				url: "http://127.0.0.1:11434/api/generate",
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					model: model,
+					prompt: prompt,
+					stream: false,
+				}),
+			});
+			return response.json.response.split("\n")[0].trim();
+		} catch (error) {
+			new Notice("Error fetching Ollama response: " + error);
+			console.error("Error fetching Ollama response:", error);
+			return "";
+		}
+	} else {
+		// Gemini: using GoogleGenerativeAI
+		try {
+			const genAI = new GoogleGenerativeAI(apiKey);
+			const model = genAI.getGenerativeModel({
+				model: "gemini-1.5-flash",
+			});
+			const result = await model.generateContent(prompt);
+			return result.response.text().split("\n")[0].trim();
+		} catch (error) {
+			new Notice("Error fetching Gemini response: " + error);
+			console.error("Error fetching Gemini response:", error);
+			return "";
+		}
+	}
+}
+
+function updateRowCell(
+	editor: Editor,
+	uniqueId: number,
+	cellIndex: number,
+	newContent: string,
+) {
+	const content = editor.getValue();
+	const lines = content.split("\n");
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].includes(`<!--ID:${uniqueId}-->`)) {
+			const cells = lines[i]
+				.split("|")
+				.slice(1, -1)
+				.map((cell) => cell.trim());
+			cells[cellIndex] = newContent;
+			lines[i] = "| " + cells.join(" | ") + " |";
+			break;
+		}
+	}
+	editor.setValue(lines.join("\n"));
+}
+
 class GenerateTableModal extends Modal {
 	settings: LanguageTablePluginSettings;
 	onSubmit: (newSettings: LanguageTablePluginSettings) => void;
 	checkboxes: { [key: string]: HTMLInputElement } = {};
-	learningLangCodeInput: HTMLInputElement;
-	nativeLangCodeInput: HTMLInputElement;
 
 	constructor(
 		app: App,
@@ -262,10 +330,13 @@ class GenerateTableModal extends Modal {
 		contentEl.createEl("p", { text: "Select columns for the table:" });
 		contentEl.createEl("div", { cls: "separator" });
 		const availableColumns = [
-			"Word",
-			"Translation",
-			"Transcription",
-			"Description",
+			...new Set([
+				...this.settings.columns,
+				"Word",
+				"Translation",
+				"Transcription",
+				"Description",
+			]),
 		];
 		availableColumns.forEach((col) => {
 			const div = contentEl.createDiv();
@@ -274,7 +345,6 @@ class GenerateTableModal extends Modal {
 			this.checkboxes[col] = checkbox;
 			div.createEl("label", { text: " " + col });
 		});
-
 		contentEl.createEl("div", { cls: "separator" });
 		const submitButton = contentEl.createEl("button", {
 			text: "Create Table",
@@ -304,7 +374,6 @@ class GenerateTableModal extends Modal {
 	}
 }
 
-/* row inserting modal */
 class InsertRowModal extends Modal {
 	tables: { text: string; start: number; end: number }[];
 	lastUsedIndex: number;
@@ -352,9 +421,7 @@ class InsertRowModal extends Modal {
 			}
 		});
 		contentEl.createEl("div", { cls: "separator" });
-		const submitButton = contentEl.createEl("button", {
-			text: "Add Row",
-		});
+		const submitButton = contentEl.createEl("button", { text: "Add Row" });
 		submitButton.onclick = () => {
 			const word = this.wordInput.value.trim();
 			if (!word) {
@@ -372,49 +439,6 @@ class InsertRowModal extends Modal {
 	}
 }
 
-/* AI stuff */
-async function fetchGeminiResult(
-	prompt: string,
-	apiKey: string,
-): Promise<string> {
-	try {
-		const genAI = new GoogleGenerativeAI(apiKey);
-		const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-		const result = await model.generateContent(prompt);
-		return result.response.text().split("\n")[0].trim();
-	} catch (error) {
-		new Notice("apik: " + apiKey);
-
-		new Notice("Error fetching Gemini response: " + error);
-		console.error("Error fetching Gemini response:", error);
-		return "";
-	}
-}
-
-/* update by row uid */
-function updateRowCell(
-	editor: Editor,
-	uniqueId: number,
-	cellIndex: number,
-	newContent: string,
-) {
-	const content = editor.getValue();
-	const lines = content.split("\n");
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i].includes(`<!--ID:${uniqueId}-->`)) {
-			const cells = lines[i]
-				.split("|")
-				.slice(1, -1)
-				.map((cell) => cell.trim());
-			cells[cellIndex] = newContent;
-			lines[i] = "| " + cells.join(" | ") + " |";
-			break;
-		}
-	}
-	editor.setValue(lines.join("\n"));
-}
-
-/* plugin settings – Settings Tab */
 class LanguageTableSettingTab extends PluginSettingTab {
 	plugin: LanguageTablePlugin;
 
@@ -442,6 +466,34 @@ class LanguageTableSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName("AI Provider")
+			.setDesc(
+				"Select which AI provider to use: Gemini (cloud) or Ollama (local)",
+			)
+			.addDropdown((drop) => {
+				drop.addOption("gemini", "Gemini");
+				drop.addOption("ollama", "Ollama");
+				drop.setValue(this.plugin.settings.aiProvider);
+				drop.onChange(async (value: "gemini" | "ollama") => {
+					this.plugin.settings.aiProvider = value;
+					await this.plugin.saveSettings();
+				});
+			});
+		new Setting(containerEl)
+			.setName("Name of local model")
+			.setDesc(
+				"Enter the name of your local model (gemma3:1b is recommended)",
+			)
+			.addText((text) => {
+				text.setPlaceholder("Name of local model")
+					.setValue(this.plugin.settings.localModelName)
+					.onChange(async (value) => {
+						this.plugin.settings.localModelName = value;
+						await this.plugin.saveSettings();
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Languages")
@@ -498,10 +550,10 @@ class LanguageTableSettingTab extends PluginSettingTab {
 					)
 					.setValue(this.plugin.settings.columns.join(", "))
 					.onChange(async (value) => {
-						this.plugin.settings.columns = value
+						this.plugin.settings.columns = [... new Set([...value
 							.split(",")
 							.map((v) => v.trim())
-							.filter((v) => v);
+							.filter((v) => v), 'Word', 'Translation'])];
 						await this.plugin.saveSettings();
 					}),
 			);
